@@ -1,0 +1,21 @@
+[package]
+name = "p4-fast-reconcile"
+version = "0.1.0"
+edition = "2021"
+authors = ["Brickadia, LLC"]
+
+[dependencies]
+anyhow = { version = "1.0.78", features = ["backtrace"] }
+clap = { version = "4.4.12", features = ["derive"] }
+walkdir = "2.4.0"
+md-5 = "0.10.6"
+rayon = "1.8.0"
+async-std = "1.12.0"
+async-process = "2.0.1"
+futures = "0.3.30"
+hex = "0.4.3"
+encoding_rs = "0.8.33"
+encoding_rs_io = "0.1.7"
+humansize = "2.1.3"
+bincode = "2.0.0-rc.3"
+directories = "5.0.1"
