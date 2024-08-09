@@ -649,7 +649,7 @@ async fn gather_workspace(options: &Options, work_dir: &String) -> Result<Worksp
                         path_lower: path_string.to_ascii_lowercase(),
                         path: path_string,
                         size: meta.len(),
-                        date: meta.modified().unwrap(),
+                        date: meta.modified()?,
                         filtered: false,
                     });
                 } else if path.file_type().is_dir() {
@@ -1450,9 +1450,9 @@ fn main() -> Result<()> {
             let mut cache_file = File::open(cache_path)?;
 
             let mut buffer = Vec::new();
-            cache_file.read_to_end(&mut buffer).unwrap();
+            cache_file.read_to_end(&mut buffer)?;
 
-            let (decoded, _) : (WorkspaceCache, usize) = bincode::decode_from_slice(&buffer[..], config).unwrap();
+            let (decoded, _) : (WorkspaceCache, usize) = bincode::decode_from_slice(&buffer[..], config)?;
 
             cache = decoded;
             cache.out_of_date = false;
@@ -1490,11 +1490,11 @@ fn main() -> Result<()> {
             println!("Saving cache to {}.", cache_path.display());
 
             let prefix = cache_path.parent().unwrap();
-            create_dir_all(prefix).unwrap();
+            create_dir_all(prefix)?;
 
             let cache_file = File::create(cache_path)?;
             let mut cache_writer = BufWriter::new(cache_file);
-            bincode::encode_into_std_write(&cache, &mut cache_writer, config).unwrap();
+            bincode::encode_into_std_write(&cache, &mut cache_writer, config)?;
             println!("    Saved {} cached digests.", cache.file_map.len());
         }
     }
