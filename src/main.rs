@@ -106,6 +106,10 @@ impl std::str::FromStr for DigestType {
             Ok(Text)
         } else if s.starts_with("utf8") {
             Ok(Utf8)
+        } else if s.starts_with("symlink") {
+            // We currently assume we're on Windows and only support symlinks that are written as
+            // plain text into a file.
+            Ok(Utf8)
         } else if s.starts_with("utf16") {
             // These are mysteriously also using an utf8 digest
             Ok(Utf8)
@@ -842,6 +846,11 @@ fn parallel_compute_digests<'a>(
 
             let mut hasher = Md5::new();
             let mut digest: [u8; 16] = Default::default();
+
+            let file_data = std::fs::symlink_metadata(&file.0.path).unwrap();
+            if !file_data.is_file() {
+                panic!("Unsupported local file type for calculating digest ({:?})", file_data.file_type());
+            }
 
             match file.1 {
                 DigestType::Binary => compute_digest_binary(file.0, &mut hasher).unwrap(),
