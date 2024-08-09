@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::{env, io};
 
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, bail, Error, Result};
 use async_process::Command;
 use async_std::task;
 use clap::Parser;
@@ -609,10 +609,10 @@ async fn run_p4_fstat_all(options: &Options, work_dir: &String) -> Result<DepotS
                     }
                 }
                 None => {
-                    return Err(anyhow!(
+                    bail!(
                         "Failed to find original record for \"{}\"",
                         &refreshed_record.depot_file
-                    ))
+                    )
                 }
             }
         }
@@ -977,10 +977,10 @@ async fn reconcile_dir(options: &Options, work_dir: &String, cache: &mut Workspa
                                         }
                                     }
                                 } else {
-                                    return Err(anyhow!(
+                                    bail!(
                                         "Cannot handle \"{}\" 1",
                                         record.client_file
-                                    ));
+                                    );
                                 }
                             }
                         }
@@ -998,7 +998,7 @@ async fn reconcile_dir(options: &Options, work_dir: &String, cache: &mut Workspa
                                 do_delete.push(record.client_file.clone());
                             }
                         }
-                        _ => return Err(anyhow!("Cannot handle \"{}\" 2", record.client_file)),
+                        _ => bail!("Cannot handle \"{}\" 2", record.client_file),
                     }
                 }
             }
@@ -1009,9 +1009,9 @@ async fn reconcile_dir(options: &Options, work_dir: &String, cache: &mut Workspa
                         do_revert_add.push(record.client_file.clone());
                     }
                 }
-                _ => return Err(anyhow!("Cannot handle \"{}\" 3", record.client_file)),
+                _ => bail!("Cannot handle \"{}\" 3", record.client_file),
             },
-            _ => return Err(anyhow!("Cannot handle \"{}\" 4", record.client_file)),
+            _ => bail!("Cannot handle \"{}\" 4", record.client_file),
         }
     }
 
@@ -1035,7 +1035,7 @@ async fn reconcile_dir(options: &Options, work_dir: &String, cache: &mut Workspa
                         None => {
                             do_add.push(file.path.clone());
                         }
-                        _ => return Err(anyhow!("Cannot handle \"{}\" 5", file.path)),
+                        _ => bail!("Cannot handle \"{}\" 5", file.path),
                     }
                 }
                 // It already exists in the depot, check if we need to do something.
@@ -1061,7 +1061,7 @@ async fn reconcile_dir(options: &Options, work_dir: &String, cache: &mut Workspa
                                     }
                                 }
                             } else {
-                                return Err(anyhow!("Cannot handle \"{}\" 6", file.path));
+                                bail!("Cannot handle \"{}\" 6", file.path);
                             }
                         }
                         // We don't have it open, check if we should.
@@ -1090,10 +1090,10 @@ async fn reconcile_dir(options: &Options, work_dir: &String, cache: &mut Workspa
                                 }
                             }
                         }
-                        _ => return Err(anyhow!("Cannot handle \"{}\" 7", file.path)),
+                        _ => bail!("Cannot handle \"{}\" 7", file.path),
                     }
                 }
-                _ => return Err(anyhow!("Cannot handle \"{}\" 8", file.path)),
+                _ => bail!("Cannot handle \"{}\" 8", file.path),
             }
         } else {
             // The file is not in the depot at all and not ignored, mark for add.
@@ -1423,7 +1423,7 @@ fn main() -> Result<()> {
     }
 
     match &options.workspace {
-        None => return Err(anyhow!("No workspace found, use -w or set P4CLIENT.")),
+        None => bail!("No workspace found, use -w or set P4CLIENT."),
         Some(name) => println!("Using workspace \"{}\".", name),
     }
 
