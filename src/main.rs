@@ -1463,8 +1463,23 @@ fn main() -> Result<()> {
 
     // Process paths from input, do these serially so the output makes more sense
     for original_path in &options.paths {
+        let mut path: String = original_path.to_owned();
+
+        // Convert depot paths to workspace paths
+        if original_path.starts_with("//") {
+            let args = ["-Mj", "-Ztag", "where"];
+            let paths = [original_path.to_owned()];
+            let result = task::block_on(run_p4_command_slice(&options, &env::current_dir().unwrap().to_string_lossy(), &args, &paths, false))?;
+            for record_result in result.into_iter().map(|line| serde_json::from_str::<serde_json::Value>(&line)) {
+                let record = record_result?;
+                if record["depotFile"].as_str() == Some(original_path) {
+                    path = record["path"].as_str().unwrap().to_owned();
+                    break
+                }
+            }
+        }
         // Correct the path since P4V tends to give us a bad one
-        let mut path = original_path.trim_end_matches("\\...").to_string();
+        let mut path = path.trim_end_matches("\\...").to_owned();
         if let Some(first_letter) = path.get_mut(0..1) {
             first_letter.make_ascii_uppercase();
         }
