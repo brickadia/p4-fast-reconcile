@@ -1409,7 +1409,7 @@ async fn reconcile_dir(options: &Options, work_dir: &String, cache: &mut Workspa
         println!("Inconsistencies found. Re-run with -a to apply changes.");
     }
 
-    return Ok(());
+    Ok(())
 }
 
 fn main() -> Result<()> {
