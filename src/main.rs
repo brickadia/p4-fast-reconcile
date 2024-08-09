@@ -95,11 +95,46 @@ pub enum DigestType {
     Utf8,
 }
 
+/// Possible types of file records from Perforce
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum FileType {
+    Binary,
+    Text,
+    Unicode,
+    Utf8,
+    Utf16,
+    Apple,
+    Resource,
+    Symlink,
+}
+
+// This determines the appropriate digest type to use for a Perforce file type.
+impl FileType {
+    fn digest_type(&self) -> Result<DigestType> {
+        Ok(match self {
+            FileType::Binary => DigestType::Binary,
+            FileType::Text | FileType::Unicode => DigestType::Text,
+            FileType::Utf8 => DigestType::Utf8,
+
+            // These are mysteriously also using an utf8 digest.
+            FileType::Utf16 => DigestType::Utf8,
+
+            // We currently assume we're on Windows and only support symlinks that are written as
+            // plain text into a file.
+            FileType::Symlink => DigestType::Utf8,
+
+            // These do not match the underlying MD5 sum when calculated on Windows, so unclear how
+            // to calculate the digest.
+            FileType::Apple | FileType::Resource => bail!("Apple legacy formats are not supported"),
+        })
+    }
+}
+
 // This helps us parse the digest type from the p4 fstat response text.
-impl std::str::FromStr for DigestType {
+impl std::str::FromStr for FileType {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> {
-        use DigestType::*;
+        use FileType::*;
         if s.starts_with("binary") {
             Ok(Binary)
         } else if s.starts_with("text") {
@@ -107,17 +142,17 @@ impl std::str::FromStr for DigestType {
         } else if s.starts_with("utf8") {
             Ok(Utf8)
         } else if s.starts_with("symlink") {
-            // We currently assume we're on Windows and only support symlinks that are written as
-            // plain text into a file.
-            Ok(Utf8)
+            Ok(Symlink)
         } else if s.starts_with("utf16") {
-            // These are mysteriously also using an utf8 digest
-            Ok(Utf8)
+            Ok(Utf16)
         } else if s.starts_with("apple") {
-            // I have no idea what this means
-            Ok(Utf8)
+            Ok(Apple)
+        } else if s.starts_with("resource") {
+            Ok(Resource)
+        } else if s.starts_with("unicode") {
+            Ok(Unicode)
         } else {
-            Err(anyhow!("Invalid file digest type \"{}\"", s))
+            Err(anyhow!("Invalid file digest type \"{s}\""))
         }
     }
 }
@@ -139,7 +174,7 @@ pub struct DepotFileRecord {
     client_file_lower: String,
 
     /// If the file is in the depot, holds the current file type, such as text+w or binary+l.
-    head_type: Option<DigestType>,
+    head_type: Option<FileType>,
 
     /// If the file is in the depot, holds the type of the last change made in the depot.
     /// This tells us if the file existed once but was deleted from the depot.
@@ -944,6 +979,9 @@ async fn reconcile_dir(options: &Options, work_dir: &String, cache: &mut Workspa
     // Files in workspace, maybe not changed from have revision, but checked out for delete.
     let mut check_revert_delete_or_reopen_edit = Vec::new();
 
+    // Files in workspace, with file types we do not support calculating checksums for
+    let mut unsupported_files = Vec::new();
+
     //
     // Analysis phase one: Check depot records against workspace files.
     //
@@ -962,12 +1000,12 @@ async fn reconcile_dir(options: &Options, work_dir: &String, cache: &mut Workspa
                         // If we have them open for delete, but still have the file, revert that.
                         Some(Delete | MoveDelete) => {
                             if let Some(file) = workspace.get_filtered(&record.client_file_lower) {
-                                if let (Some(digest_type), Some(size)) =
+                                if let (Some(file_type), Some(size)) =
                                     (record.head_type, record.file_size)
                                 {
-                                    if size == file.size || digest_type != DigestType::Binary {
+                                    if size == file.size || file_type != FileType::Binary {
                                         check_revert_delete_or_reopen_edit
-                                            .push((file, digest_type));
+                                            .push((file, file_type.digest_type()?));
 
                                         if options.verbose {
                                             println!(
@@ -1031,6 +1069,17 @@ async fn reconcile_dir(options: &Options, work_dir: &String, cache: &mut Workspa
     for file in workspace.files.iter().filter(|f| !f.filtered) {
         // First check if the file is present in the depot state.
         if let Some(record) = depot.get_client_record(&file.path_lower) {
+            // Skip files we don't know how to calculate the checksum of
+            if let Some(file_type) = record.head_type {
+                match file_type {
+                    FileType::Apple | FileType::Resource => {
+                        unsupported_files.push(record);
+                        continue
+                    },
+                    _ => {}
+                }
+            }
+
             // Check what the depot states the file should be.
             match record.head_action {
                 // We already took care of files we opened for add in phase one.
@@ -1056,11 +1105,11 @@ async fn reconcile_dir(options: &Options, work_dir: &String, cache: &mut Workspa
                         Some(Delete | MoveDelete) => (),
                         // We have it open for edit, check if we reverted the change.
                         Some(Edit) => {
-                            if let (Some(digest_type), Some(size)) =
+                            if let (Some(file_type), Some(size)) =
                                 (record.head_type, record.file_size)
                             {
-                                if size == file.size || digest_type != DigestType::Binary {
-                                    check_revert_edit.push((file, digest_type));
+                                if size == file.size || file_type != FileType::Binary {
+                                    check_revert_edit.push((file, file_type.digest_type()?));
 
                                     if options.verbose {
                                         println!(
@@ -1075,10 +1124,10 @@ async fn reconcile_dir(options: &Options, work_dir: &String, cache: &mut Workspa
                         }
                         // We don't have it open, check if we should.
                         None => {
-                            if let (Some(digest_type), Some(size)) =
+                            if let (Some(file_type), Some(size)) =
                                 (record.head_type, record.file_size)
                             {
-                                if size != file.size && digest_type == DigestType::Binary {
+                                if size != file.size && file_type == FileType::Binary {
                                     do_edit.push(file.path.clone());
 
                                     if options.verbose {
@@ -1088,7 +1137,7 @@ async fn reconcile_dir(options: &Options, work_dir: &String, cache: &mut Workspa
                                         );
                                     }
                                 } else {
-                                    check_edit.push((file, digest_type));
+                                    check_edit.push((file, file_type.digest_type()?));
 
                                     if options.verbose {
                                         println!(
@@ -1232,6 +1281,18 @@ async fn reconcile_dir(options: &Options, work_dir: &String, cache: &mut Workspa
         + do_revert_add.len()
         + do_revert_edit.len()
         + do_revert_delete.len();
+
+    if !unsupported_files.is_empty() {
+        println!("Found {num_files} file(s) that are not supported by p4-fast-reconcile, running a manual reconcile", num_files = unsupported_files.len());
+        let unsupported_paths: Vec<_> = unsupported_files.into_iter().map(|rec| rec.depot_file.to_owned()).collect();
+        if options.apply {
+            let args = ["reconcile"];
+            run_p4_command_batched(&options, &work_dir, &args, &unsupported_paths, true).await?;
+        } else {
+            let args = ["reconcile", "-n"];
+            run_p4_command_batched(&options, &work_dir, &args, &unsupported_paths, true).await?;
+        }
+    }
 
     if sum_changes <= 0 {
         println!("No changes to apply, everything up to date.");
