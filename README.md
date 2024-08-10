@@ -56,5 +56,4 @@ This is equivalent to running "Reconcile Offline Work" followed by "Revert Uncha
 It has only been tested on our repositories, so it may not work for you if you use configuration different from ours.  
 Use the dry run mode first to see whether it is working as intended. You are responsible for changes made to your repository.
 
-- The `apple` digest type on depot files is not supported. This is not normally used.
 - `p4-fast-reconcile` does not implement move/add/delete pair detection.
