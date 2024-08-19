@@ -382,7 +382,7 @@ impl WorkspaceState {
 /// Runs one slice of a batched p4 command (eg. p4 stuff a100 a101 ... a198 a199)
 async fn run_p4_command_slice(
     options: &Options,
-    work_dir: &String,
+    work_dir: &str,
     always_args: &[&'static str],
     batched_args_slice: &[String],
     use_changelist: bool,
@@ -430,7 +430,7 @@ async fn run_p4_command_slice(
 /// Runs a p4 command with thousands of arguments in multiple batches to bypass windows input limit
 async fn run_p4_command_batched(
     options: &Options,
-    work_dir: &String,
+    work_dir: &str,
     always_args: &[&'static str],
     batched_args: &[String],
     use_changelist: bool,
@@ -446,7 +446,7 @@ async fn run_p4_command_batched(
     let unsafe_static_options =
         unsafe { std::mem::transmute::<&Options, &'static Options>(&options) };
     let unsafe_static_work_dir =
-        unsafe { std::mem::transmute::<&String, &'static String>(&work_dir) };
+        unsafe { std::mem::transmute::<&str, &'static str>(work_dir) };
     let unsafe_static_always_args =
         unsafe { std::mem::transmute::<&[&'static str], &'static [&'static str]>(&always_args) };
     let unsafe_static_batched_args =
@@ -548,7 +548,7 @@ async fn parse_p4_fstat_response(output: Vec<String>) -> Result<Vec<DepotFileRec
     Ok(records)
 }
 
-async fn run_p4_fstat_all(options: &Options, work_dir: &String) -> Result<DepotState> {
+async fn run_p4_fstat_all(options: &Options, work_dir: &str) -> Result<DepotState> {
     println!("   Requesting depot state for all files.");
     let start_time = Instant::now();
 
@@ -667,7 +667,7 @@ async fn run_p4_fstat_all(options: &Options, work_dir: &String) -> Result<DepotS
 }
 
 /// Scans workspace for files that are not ignored.
-async fn gather_workspace(options: &Options, work_dir: &String) -> Result<WorkspaceState> {
+async fn gather_workspace(options: &Options, work_dir: &str) -> Result<WorkspaceState> {
     println!("   Scanning workspace for files.");
     let start_time = Instant::now();
 
@@ -917,12 +917,12 @@ fn parallel_compute_digests<'a>(
 }
 
 /// Performs reconcile for a single directory. Ties everything else together.
-async fn reconcile_dir(options: &Options, work_dir: &String, cache: &mut WorkspaceCache) -> Result<()> {
+async fn reconcile_dir(options: &Options, work_dir: &str, cache: &mut WorkspaceCache) -> Result<()> {
     println!("Processing path \"{}\".", work_dir);
 
     let (maybe_depot, maybe_workspace) = join!(
         run_p4_fstat_all(&options, &work_dir),
-        gather_workspace(&options, &work_dir)
+        gather_workspace(&options, work_dir)
     );
 
     let depot: DepotState = maybe_depot?;
@@ -1533,8 +1533,23 @@ fn main() -> Result<()> {
 
     // Process paths from input, do these serially so the output makes more sense
     for original_path in &options.paths {
+        let mut path: String = original_path.to_owned();
+
+        // Convert depot paths to workspace paths
+        if original_path.starts_with("//") {
+            let args = ["-Mj", "-Ztag", "where"];
+            let paths = [original_path.to_owned()];
+            let result = task::block_on(run_p4_command_slice(&options, &env::current_dir().unwrap().to_string_lossy(), &args, &paths, false))?;
+            for record_result in result.into_iter().map(|line| serde_json::from_str::<serde_json::Value>(&line)) {
+                let record = record_result?;
+                if record["depotFile"].as_str() == Some(original_path) {
+                    path = record["path"].as_str().unwrap().to_owned();
+                    break
+                }
+            }
+        }
         // Correct the path since P4V tends to give us a bad one
-        let mut path = original_path.trim_end_matches("\\...").to_string();
+        let mut path = path.trim_end_matches("\\...").to_owned();
         if let Some(first_letter) = path.get_mut(0..1) {
             first_letter.make_ascii_uppercase();
         }
