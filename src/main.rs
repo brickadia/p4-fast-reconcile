@@ -25,7 +25,7 @@ use directories::ProjectDirs;
 const READ_BUFFER_SIZE: usize = 128 * 1024;
 
 #[derive(Parser, Debug)]
-#[command(version = "1.0.0")]
+#[command(version = "0.1.1")]
 struct Options {
     /// The workspace to use. If not set, will try to use P4CLIENT. If that is also not set, will try the default one.
     #[arg(short, long)]
