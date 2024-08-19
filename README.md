@@ -29,7 +29,7 @@ The program is ran as a custom tool from P4V. Set it up like this:
 ![Custom Tool Setup](img/custom_tool.png)
 
 - Set Application to the location of the release executable.
-- Set Arguments to `-l %D` for a dry run or `-a -l %D` for a real run.
+- Set Arguments to `-w $c -l %D` for a dry run or `-a -w $c -l %D` for a real run.
 - Check "Add to applicable context menus"
 - Check "Run tool in terminal window"
 - Check "Refresh Helix P4V upon completion"
